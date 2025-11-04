@@ -1,5 +1,5 @@
 import types from "..";
-import { processTailwindCSS, formatCSS } from "./util";
+import { processTailwindCSS, formatCSS, warmupClasses } from "./util";
 import { cssToJson } from "./util/css-to-json";
 
 const getCSS: typeof types.getCSS = (content, config) => {
@@ -18,10 +18,19 @@ const getCSS: typeof types.getCSS = (content, config) => {
   });
 };
 
-const tailwindToCSS: typeof types.tailwindToCSS = ({ config, options }) => ({
-  twi: tailwindInlineCSS(config, options),
-  twj: tailwindInlineJson(config, options),
-});
+const tailwindToCSS: typeof types.tailwindToCSS = ({ config, options, warmup }) => {
+  const cssCache = new Map<string, string>();
+  const jsonCache = new Map<string, object>();
+  
+  if (warmup) {
+    warmupClasses(warmup, config, options, getCSS, cssCache, jsonCache);
+  }
+  
+  return {
+    twi: tailwindInlineCSSWithCache(config, options, cssCache),
+    twj: tailwindInlineJsonWithCache(config, options, jsonCache),
+  };
+};
 
 const classListFormatter: typeof types.classListFormatter = (...params) => {
   let classList = "";
@@ -45,37 +54,75 @@ const classListFormatter: typeof types.classListFormatter = (...params) => {
   return classList;
 };
 
-const tailwindInlineCSS: typeof types.tailwindInlineCSS =
-  (config, mainOptions) =>
+const tailwindInlineCSSWithCache =
+  (config, mainOptions, cache: Map<string, string>) =>
   (...params: any) => {
     const content = classListFormatter(params);
-
     const { 1: options } = params || {};
+
+    const cacheKey = JSON.stringify({ content, config, mainOptions, options });
+    
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey)!;
+    }
 
     const defaultOptions = { merge: true, minify: true, ignoreMediaQueries: true };
     const twiOptions = { ...defaultOptions, ...mainOptions, ...options };
 
-    let css = formatCSS(getCSS(content, config));
+    const css = getCSS(content, config);
+    const formattedCSS = formatCSS(css);
 
     if (twiOptions?.ignoreMediaQueries) {
-      css.removeMediaQueries();
+      formattedCSS.removeMediaQueries();
     } else {
-      css.removeUndefined();
-      css.combineMediaQueries();
+      formattedCSS.removeUndefined();
+      formattedCSS.combineMediaQueries();
     }
 
-    css.fixRGB();
+    formattedCSS.fixRGB();
 
-    if (twiOptions?.merge) css.merge();
-    if (twiOptions?.minify) css.minify();
+    if (twiOptions?.merge) formattedCSS.merge();
+    if (twiOptions?.minify) formattedCSS.minify();
 
-    return css.get();
+    const result = formattedCSS.get();
+    
+    cache.set(cacheKey, result);
+    return result;
+  };
+
+const tailwindInlineJsonWithCache =
+  (config, mainOptions, cache: Map<string, object>) =>
+  (...params: any) => {
+    const content = classListFormatter(params);
+    const { 1: options } = params || {};
+
+    const cacheKey = JSON.stringify({ content, config, mainOptions, options });
+    
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey)!;
+    }
+
+    const cssCache = new Map<string, string>();
+    const cssResult = tailwindInlineCSSWithCache(config, mainOptions, cssCache)(...params);
+    
+    const result = cssToJson(cssResult);
+    
+    cache.set(cacheKey, result);
+    return result;
+  };
+
+const tailwindInlineCSS: typeof types.tailwindInlineCSS =
+  (config, mainOptions) =>
+  (...params: any) => {
+    const cache = new Map<string, string>();
+    return tailwindInlineCSSWithCache(config, mainOptions, cache)(...params);
   };
 
 const tailwindInlineJson: typeof types.tailwindInlineJson =
   (config, mainOptions) =>
   (...params: any) => {
-    return cssToJson(tailwindInlineCSS(config, mainOptions)(params));
+    const cache = new Map<string, object>();
+    return tailwindInlineJsonWithCache(config, mainOptions, cache)(...params);
   };
 
 const twi: typeof types.twi = tailwindInlineCSS();

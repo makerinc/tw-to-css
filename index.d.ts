@@ -21,7 +21,7 @@ type Options = { merge?: boolean; minify?: boolean; ignoreMediaQueries?: boolean
 
 export function getCSS(content: string, config?: TailwindConfig): string;
 
-export function tailwindToCSS(params: { config?: TailwindConfig; options?: Options }): {
+export function tailwindToCSS(params: { config?: TailwindConfig; options?: Options; warmup?: string }): {
   twi: typeof twi;
   twj: typeof twj;
 };

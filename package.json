@@ -19,7 +19,9 @@
     "dist/*"
   ],
   "scripts": {
-    "build": "tsx src/build.ts"
+    "build": "tsx src/build.ts",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
